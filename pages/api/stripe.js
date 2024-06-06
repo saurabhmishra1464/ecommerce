@@ -2,36 +2,47 @@ import Stripe from 'stripe';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-console.log('STRIPE_SECRET_KEY:', process.env.STRIPE_SECRET_KEY); // Temporary logging for debugging
-
 export default async function handler(req, res) {
   if (req.method === 'POST') {
     try {
-      console.log('Request body:', req.body); // Log the request body for debugging
-
-      const session = await stripe.checkout.sessions.create({
-        payment_method_types: ['card'],
-        line_items: req.body.map(item => ({
-          price_data: {
-            currency: 'usd',
-            product_data: {
-              name: item.name,
-            },
-            unit_amount: item.price * 100, // Convert price to cents
-          },
-          quantity: item.quantity,
-        })),
+      const params = {
+        submit_type: 'pay',
         mode: 'payment',
-        success_url: `${req.headers.origin}/success?session_id={CHECKOUT_SESSION_ID}`,
+        payment_method_types: ['card'],
+        billing_address_collection: 'auto',
+        shipping_options: [
+          { shipping_rate: 'shr_1POHxeIPyBmhP9vfgQZ5G3Bw' },
+        ],
+        line_items: req.body.map((item) => {
+          const img = item.image[0].asset._ref;
+          const newImage = img.replace('image-', 'https://cdn.sanity.io/images/5lh9zz4u/production/').replace('-webp', '.webp');
+
+          return {
+            price_data: { 
+              currency: 'usd',
+              product_data: { 
+                name: item.name,
+                images: [newImage],
+              },
+              unit_amount: item.price * 100,
+            },
+            adjustable_quantity: {
+              enabled:true,
+              minimum: 1,
+            },
+            quantity: item.quantity
+          }
+        }),
+        success_url: `${req.headers.origin}/success`,
         cancel_url: `${req.headers.origin}/canceled`,
-      });
+      }
 
-      console.log('Stripe session created:', session);
+      // Create Checkout Sessions from body params.
+      const session = await stripe.checkout.sessions.create(params);
 
-      res.status(200).json({ id: session.id });
+      res.status(200).json(session);
     } catch (err) {
-      console.error('Error creating Stripe session:', err);
-      res.status(500).json({ error: err.message });
+      res.status(err.statusCode || 500).json(err.message);
     }
   } else {
     res.setHeader('Allow', 'POST');
